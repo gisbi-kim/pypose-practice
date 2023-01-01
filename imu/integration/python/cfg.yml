@@ -1,0 +1,21 @@
+# pypose's Default: 0.0032.
+# see https://pypose.org/docs/main/generated/pypose.module.IMUPreintegrator/
+gyr_std_const: 0.0032
+
+# pypose's Default: 0.08.
+# see https://pypose.org/docs/main/generated/pypose.module.IMUPreintegrator/
+acc_std_const: 0.02
+
+step_size: 2
+
+# to get a better aligned a raw acc (see https://github.com/pypose/pypose/blob/5437b71e3dd972f6d140a2becbfde5850a0a43aa/pypose/module/imu_preintegrator.py#L317)
+use_rot_initial: True
+
+input:
+  dataroot: "/data"
+  dataname: "2011_09_30"
+  datadrive: "0018"
+
+output:
+  plot3d: True # False or True 
+  save_dir: ../log
