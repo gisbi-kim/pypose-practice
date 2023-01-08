@@ -84,8 +84,8 @@ prop_global_pose_corrected = None
 
 for idx, data in enumerate(tqdm(loader)):
 
-    if idx > 300:
-        break
+    # if idx > 500:
+    #     break
 
     """
         imu propagation
@@ -121,6 +121,9 @@ for idx, data in enumerate(tqdm(loader)):
         print(f"prop_global_pose\n {prop_global_pose}")
         print(f"relative_tf_by_imu\n {relative_tf_by_imu}")
 
+    # print(integrator.vel)
+    # print(data["dt"])
+
     """
         lossely correction 
     """
@@ -137,7 +140,7 @@ for idx, data in enumerate(tqdm(loader)):
             source = pcd
             target = pcd_previous
             # # too small (e.g., 0.05) value may occur overfit so not good than 0.2-0.3--
-            threshold = 0.3
+            threshold = 0.6
             # for rigorous of tf_init, imu2lidar calib-based hand eye initial is required.
             tf_init = relative_tf_by_imu
             # tf_init = np.identity(4)
@@ -186,6 +189,9 @@ for idx, data in enumerate(tqdm(loader)):
                 integrator.pos = torch.tensor(
                     prop_global_pose_corrected[:3, -1]).unsqueeze(0)
                 integrator.rot = pp.SO3(r.as_quat())
+                integrator.vel = torch.tensor(
+                    prop_global_pose_corrected[:3, -1] - pose_previous[:3, -1]).unsqueeze(0)
+
                 print(integrator.pos)
                 print(integrator.rot)
 
