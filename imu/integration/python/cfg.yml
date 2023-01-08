@@ -6,10 +6,10 @@ gyr_std_const: 0.0032
 # see https://pypose.org/docs/main/generated/pypose.module.IMUPreintegrator/
 acc_std_const: 0.02
 
-step_size: 2
+step_size: 50
 
 # to get a better aligned a raw acc (see https://github.com/pypose/pypose/blob/5437b71e3dd972f6d140a2becbfde5850a0a43aa/pypose/module/imu_preintegrator.py#L317)
-use_rot_initial: True
+use_rot_initial: False
 
 input:
   dataroot: "/data"

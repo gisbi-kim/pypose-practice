@@ -68,7 +68,6 @@ covs = [torch.zeros(9, 9)]
 
 for idx, data in enumerate(loader):
 
-    print(data["init_rot"])
     if is_true(cfg['use_rot_initial']):
         curr_rot = data["init_rot"]
         # Tip: this information should be provided by a visual or lidar-aided odometry (i.e., we can avoid a big drift to the gravity diriection thanks to the structural registration of a lidar sensor)
@@ -118,12 +117,17 @@ plt.legend(["IMU only odometry", "Ground Truth"])
 if not os.path.exists(cfg["output"]["save_dir"]):
     os.makedirs(cfg["output"]["save_dir"])
 
-figure = os.path.join(
+figure_save_path = os.path.join(
     cfg["output"]["save_dir"], cfg["input"]["dataname"] +
     f"_{drive}_gyrStd{gyr_std_const}_accStd{acc_std_const}.png"
 )
-plt.savefig(figure)
-print("Saved to", figure)
+plt.savefig(figure_save_path)
+print(f"Saved to {figure_save_path}\n")
 
+print(matplotlib.get_backend())
+
+# NOTE:
+# at a host-side terminal,
+#  $ xhost +local:docker; is required to visualize the figure
 matplotlib.use("TkAgg")
 plt.show()

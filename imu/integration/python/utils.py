@@ -53,7 +53,7 @@ def plot_gaussian(ax, means, covs,
             continue
 
         eigvals, eigvecs = np.linalg.eig(covs[i])
-        print(covs[i])
+
         axis = np.sqrt(eigvals) * sigma
         slope = eigvecs[1][0] / eigvecs[1][1]
         angle = 180.0 * np.arctan(slope) / np.pi
