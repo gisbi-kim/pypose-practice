@@ -2,6 +2,8 @@ import numpy as np
 import torch
 from matplotlib.collections import PatchCollection
 from matplotlib.patches import Ellipse
+import copy
+import open3d as o3d
 
 
 def imu_collate(data):
@@ -18,6 +20,8 @@ def imu_collate(data):
 
     dt = torch.stack([d["dt"] for d in data]).unsqueeze(-1)
 
+    velodyne = [d["velodyne"] for d in data]
+
     return {
         "dt": dt,
         "acc": acc,
@@ -25,10 +29,28 @@ def imu_collate(data):
         "gt_pos": gt_pos,
         "gt_vel": gt_vel,
         "gt_rot": gt_rot,
+        "velodyne": velodyne,
         "init_pos": init_pos,
         "init_vel": init_vel,
         "init_rot": init_rot,
     }
+
+
+def velo2downpcd(velodyne, voxel_size=0.5):
+    xyz = velodyne[:, :3]
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(xyz)
+    pcd = pcd.voxel_down_sample(voxel_size=voxel_size)
+    return pcd
+
+
+def draw_registration_result(source, target, transformation):
+    source_temp = copy.deepcopy(source)
+    target_temp = copy.deepcopy(target)
+    source_temp.paint_uniform_color([1, 0, 0])
+    target_temp.paint_uniform_color([0, 0, 1])
+    source_temp.transform(transformation)
+    o3d.visualization.draw_geometries([source_temp, target_temp])
 
 
 def is_true(flag):

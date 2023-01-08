@@ -4,6 +4,7 @@ import numpy as np
 import torch
 import torch.utils.data as Data
 
+import ipdb
 import pykitti
 import pypose as pp
 
@@ -22,6 +23,8 @@ class IMU(Data.Dataset):
                 for i in range(self.seq_len)
             ]
         )
+
+        print("loading oxts data ...")
         self.gyro = torch.tensor(
             [
                 [
@@ -69,12 +72,20 @@ class IMU(Data.Dataset):
                      for i in range(self.seq_len)])
         )
 
+        print(f"loading {self.seq_len} velodyne data ...")
+        print(f" (may require a few GB memory)")
+        self.velodyne = [(self.data.get_velo(i)) for i in range(self.seq_len)]
+        print(len(self.velodyne))
+        print(self.velodyne[6].shape)
+        print(type(self.velodyne[6]))
+
         start_frame = 0
         end_frame = self.seq_len
 
         self.index_map = [
             i for i in range(0, end_frame - start_frame - self.duration, step_size)
         ]
+        # print(f"self.index_map is {self.index_map}")
 
     def __len__(self):
         return len(self.index_map)
@@ -86,10 +97,10 @@ class IMU(Data.Dataset):
             "dt": self.dt[frame_id:end_frame_id],
             "acc": self.acc[frame_id:end_frame_id],
             "gyro": self.gyro[frame_id:end_frame_id],
-            "gyro": self.gyro[frame_id:end_frame_id],
             "gt_pos": self.gt_pos[frame_id + 1: end_frame_id + 1],
             "gt_rot": self.gt_rot[frame_id + 1: end_frame_id + 1],
             "gt_vel": self.gt_vel[frame_id + 1: end_frame_id + 1],
+            "velodyne": self.velodyne[frame_id],
             "init_pos": self.gt_pos[frame_id][None, ...],
             # TODO: the init rotation might be used in gravity compensation
             "init_rot": self.gt_rot[frame_id:end_frame_id],

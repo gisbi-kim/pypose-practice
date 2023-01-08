@@ -1,5 +1,5 @@
 FROM ubuntu:jammy
-#FROM pypose:imu
+# FROM pypose:imu
 
 ENV TZ="Asia/Seoul"
 ENV DEBIAN_FRONTEND=noninteractive
@@ -11,9 +11,10 @@ RUN \
     apt-get install -y python-pip; \
     apt-get install -y python3-pip; \
     pip install --upgrade pip; \
-    pip install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cpu; \
+    pip install ipdb torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cpu; \
     apt-get install -y python3-opencv; \ 
     apt-get install -y python3-tk; \
+    pip install open3d \
     pip install pyyaml; \
     pip install pypose; \
     pip install pykitti
