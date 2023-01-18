@@ -25,12 +25,24 @@ import pypose as pp
 from imu_dataloader import IMU
 from utils import *
 
+
+def getSE3(state):
+    prop_global_pose = np.identity(4)  # prop means propagated
+    prop_global_pose[:3, :3] \
+        = state['rot'][..., -1, :].matrix().numpy().squeeze()
+    prop_global_pose[:3, -1] \
+        = state["pos"][..., -1, :].numpy().squeeze()
+    return prop_global_pose
+
+
 with open("cfg.yml") as f:
     cfg = yaml.load(f, Loader=yaml.FullLoader)
     print(cfg)
 
 drive = cfg["input"]["datadrive"]
 print(drive)
+
+calib = KITTIcalib()
 
 # Step 1: Define dataloader using the ``IMU`` class we defined above
 dataset = IMU(
@@ -47,28 +59,18 @@ loader = Data.DataLoader(
     dataset=dataset, batch_size=1, collate_fn=imu_collate, shuffle=False
 )
 
-# loader = Data.DataLoader(
-#     dataset=dataset, batch_size=1, shuffle=False
-# )
-
 
 # Step 2: Get the initial position, rotation and velocity, all 0 here
 init = dataset.get_init_value()
 
 
 # Step 3: Define the IMUPreintegrator.
-gyr_std_const = cfg["gyr_std_const"]
-acc_std_const = cfg["acc_std_const"]
+gyr_std = cfg["gyr_std_const"]
+acc_std = cfg["acc_std_const"]
 integrator = pp.module.IMUPreintegrator(
     init["pos"], init["rot"], init["vel"],
-    # Default: (3.2e-3)**2.
-    # see https://pypose.org/docs/main/generated/pypose.module.IMUPreintegrator/
-    gyro_cov=torch.tensor(
-        [(gyr_std_const)**2, (gyr_std_const)**2, (gyr_std_const)**2]),
-    # Default: (8e-2)**2.
-    # see https://pypose.org/docs/main/generated/pypose.module.IMUPreintegrator/
-    acc_cov=torch.tensor(
-        [(acc_std_const)**2, (acc_std_const)**2, (acc_std_const)**2]),
+    gyro_cov=torch.tensor([(gyr_std)**2, (gyr_std)**2, (gyr_std)**2]),
+    acc_cov=torch.tensor([(acc_std)**2, (acc_std)**2, (acc_std)**2]),
     prop_cov=True, reset=False
 )
 
@@ -97,41 +99,31 @@ for idx, data in enumerate(tqdm(loader)):
         if prop_global_pose_corrected is None:
             curr_rot = None
         else:
-            # curr_rot = prop_global_pose_corrected[:3, :3]
-            curr_rot = None
+            curr_rot = prop_global_pose_corrected[:3, :3]
 
     state = integrator(
         dt=data["dt"], gyro=data["gyro"], acc=data["acc"],
         rot=curr_rot  # optional
     )
 
-    prop_global_pose = np.identity(4)  # prop means propagated
-    prop_global_pose[:3, :3] \
-        = state['rot'][..., -1, :].matrix().numpy().squeeze()
-    prop_global_pose[:3, -1] \
-        = state["pos"][..., -1, :].numpy().squeeze()
-
-    # print(state["pos"][..., -1, :].shape)
-    # ipdb.set_trace()
+    prop_global_pose = getSE3(state)
 
     relative_tf_by_imu = np.identity(4)
     if pose_previous is not None:
         relative_tf_by_imu = np.linalg.inv(pose_previous) @ prop_global_pose
-        print(f"pose_previous\n {pose_previous}")
-        print(f"prop_global_pose\n {prop_global_pose}")
-        print(f"relative_tf_by_imu\n {relative_tf_by_imu}")
-
-    # print(integrator.vel)
-    # print(data["dt"])
+        # print(f"pose_previous\n {pose_previous}")
+        # print(f"prop_global_pose\n {prop_global_pose}")
+        # print(f"relative_tf_by_imu\n {relative_tf_by_imu}")
 
     """
         lossely correction 
     """
     use_lidar_correction = True
     if use_lidar_correction:
-        voxel_size = 0.5
+        voxel_size = 0.3
+        icp_inlier_threshold = voxel_size
         pcd = velo2downpcd(data["velodyne"][0], voxel_size)
-        print(pcd)
+        # print(pcd)
 
         if pcd_previous is None:
             pass
@@ -140,16 +132,15 @@ for idx, data in enumerate(tqdm(loader)):
             source = pcd
             target = pcd_previous
             # # too small (e.g., 0.05) value may occur overfit so not good than 0.2-0.3--
-            threshold = 0.6
             # for rigorous of tf_init, imu2lidar calib-based hand eye initial is required.
             tf_init = relative_tf_by_imu
             # tf_init = np.identity(4)
             reg_p2p = o3d.pipelines.registration.registration_generalized_icp(
-                source, target, threshold, tf_init,
+                source, target, icp_inlier_threshold, tf_init,
                 o3d.pipelines.registration.TransformationEstimationForGeneralizedICP())
-            print(reg_p2p)
-            print("Transformation is:")
-            print(reg_p2p.transformation)
+            # print(reg_p2p)
+            # print("Transformation is:")
+            # print(reg_p2p.transformation)
 
             if 0:
                 draw_registration_result(
@@ -157,45 +148,30 @@ for idx, data in enumerate(tqdm(loader)):
 
             # loosely correction
             if idx > 2:
-
-                imu2velo_rot = np.array([9.999976e-01, 7.553071e-04, -2.035826e-03,
-                                         -7.854027e-04, 9.998898e-01, -1.482298e-02,
-                                         2.024406e-03, 1.482454e-02, 9.998881e-01]).reshape(3, 3)
-                imu2velo_trans = np.array(
-                    [-8.086759e-01, 3.195559e-01, -7.997231e-01])
-                imu2velo = np.identity(4)
-                imu2velo[:3, :3] = imu2velo_rot
-                imu2velo[:3, -1] = imu2velo_trans
-                velo2imu = np.linalg.inv(imu2velo)
-                print(imu2velo)
-
-                # prop_global_pose_corrected = pose_previous @ \
-                #     (imu2velo @ reg_p2p.transformation @ velo2imu)
                 prop_global_pose_corrected = pose_previous @ \
-                    (velo2imu @ reg_p2p.transformation @ imu2velo)
+                    (calib.velo2imu @ reg_p2p.transformation @ calib.imu2velo)
 
                 r = R.from_matrix(prop_global_pose_corrected[:3, :3])
-                # prop_global_pose_corrected_rot = torch.tensor(r.as_rotvec())
 
                 # see https://pypose.org/docs/main/_modules/pypose/module/imu_preintegrator/#IMUPreintegrator
                 # integrator.pos = torch.tensor(
                 #     prop_global_pose_corrected[:3, -1]).transpose()
 
-                print('before and after')
-                print(type(integrator.pos))
-                print(type(integrator.rot))
-                print(integrator.pos)
-                print(integrator.rot)
+                # print('before and after')
+                # print(type(integrator.pos))
+                # print(type(integrator.rot))
+                # print(integrator.pos)
+                # print(integrator.rot)
                 integrator.pos = torch.tensor(
                     prop_global_pose_corrected[:3, -1]).unsqueeze(0)
                 integrator.rot = pp.SO3(r.as_quat())
                 integrator.vel = torch.tensor(
                     prop_global_pose_corrected[:3, -1] - pose_previous[:3, -1]).unsqueeze(0)
 
-                print(integrator.pos)
-                print(integrator.rot)
+                # print(integrator.pos)
+                # print(integrator.rot)
 
-                print(data["gt_pos"][..., -1, :])
+                # print(data["gt_pos"][..., -1, :])
 
             else:
                 prop_global_pose_corrected = prop_global_pose
@@ -251,7 +227,7 @@ if not os.path.exists(cfg["output"]["save_dir"]):
 
 figure_save_path = os.path.join(
     cfg["output"]["save_dir"], cfg["input"]["dataname"] +
-    f"_{drive}_gyrStd{gyr_std_const}_accStd{acc_std_const}.png"
+    f"_{drive}_gyrStd{gyr_std}_accStd{acc_std}.png"
 )
 plt.savefig(figure_save_path)
 print(f"Saved to {figure_save_path}")

@@ -14,7 +14,7 @@ use_rot_initial: False
 input:
   dataroot: "/data"
   dataname: "2011_09_30"
-  datadrive: "0018"
+  datadrive: "0020"
 
 output:
   plot3d: True # False or True 
