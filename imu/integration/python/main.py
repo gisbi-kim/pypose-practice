@@ -67,7 +67,7 @@ if __name__ == "__main__":
 
     for idx, data in enumerate(tqdm(loader)):
 
-        # if idx > 250:
+        # if idx > 100:
         #     break
 
         """
@@ -95,12 +95,11 @@ if __name__ == "__main__":
             relative_tf_by_imu = np.identity(4)
         else:
             relative_tf_by_imu = \
-                np.linalg.inv(pose_previous) @ prop_global_pose
+                np.linalg.inv(prop_global_pose_prev) @ prop_global_pose
 
-        sparse_correction_gap = 1
-        on_correction = (idx % sparse_correction_gap) == 0
-        print(f"on_correction {on_correction}")
-        if not (on_correction and is_true(cfg["use_lidar_correction"])):
+        prop_global_pose_prev = prop_global_pose
+
+        if not is_true(cfg["use_lidar_correction"]):
             append_log(data, state)
             # early return
             continue
@@ -108,11 +107,12 @@ if __name__ == "__main__":
         """
             step 2: lossely correction
         """
+
         pcd = downsample_points(data["velodyne"][0], cfg)
 
         if pcd_previous is None:
             # renwal for next
-            pose_previous = pose_corrected
+            pose_previous = prop_global_pose
             pcd_previous = pcd
             # early return
             continue
@@ -120,35 +120,46 @@ if __name__ == "__main__":
         # print(pcd)
         source = pcd
         target = pcd_previous
-        tf_init = relative_tf_by_imu
+        lidar_delta_tf_init = calib.imu2velo @ relative_tf_by_imu @ calib.velo2imu
+        # lidar_delta_tf_init = np.identity(4)
 
         # @timeit
-        def icp():
-            return o3d.pipelines.registration.registration_generalized_icp(
-                source, target, cfg["icp_inlier_threshold"], tf_init,
-                o3d.pipelines.registration.TransformationEstimationForGeneralizedICP())
+        def icp(source, target):
+            source.estimate_normals()
+            target.estimate_normals()
+            return o3d.pipelines.registration.registration_icp(
+                source, target, cfg["icp_inlier_threshold"], lidar_delta_tf_init,
+                o3d.pipelines.registration.TransformationEstimationPointToPlane(),
+                o3d.pipelines.registration.ICPConvergenceCriteria(max_iteration=30)).transformation
 
-        reg_p2p = icp()
+        lidar_delta_tf = icp(source, target)
+
+        def inspect_false_registration():
+            diff = np.linalg.inv(lidar_delta_tf) @ lidar_delta_tf_init
+            print("diff ", diff[:3, -1].transpose())
+
+        inspect_false_registration()
 
         if is_true(cfg["visualize_registered_scan"]):
             draw_registration_result(
-                source, target, reg_p2p.transformation)
-
-        def update_pva(pos, vel, rot):
-            integrator.pos = pos
-            integrator.vel = vel
-            integrator.rot = rot
+                source, target, lidar_delta_tf)
 
         # loosely correction
-        if idx == 1:
+        if pose_corrected is None:
             print(pcd)
             pose_corrected = prop_global_pose
         else:
-            print(pose_previous)
-            pose_corrected = pose_previous @ \
-                (calib.velo2imu @ reg_p2p.transformation @ calib.imu2velo)
+            def update_pose_via_handeye():
+                return pose_previous @ (calib.velo2imu @ lidar_delta_tf @ calib.imu2velo)
 
-            # see https://pypose.org/docs/main/_modules/pypose/module/imu_preintegrator/#IMUPreintegrator
+            def update_pva(pos, vel, rot):
+                integrator.pos = pos
+                integrator.vel = vel
+                integrator.rot = rot
+
+            # see https://pypose.org/docs/main/
+            # _modules/pypose/module/imu_preintegrator/#IMUPreintegrator
+            pose_corrected = update_pose_via_handeye()
             update_pva(pos=torch.tensor(pose_corrected[:3, -1]).unsqueeze(0),
                        vel=torch.tensor(
                            pose_corrected[:3, -1] - pose_previous[:3, -1]).unsqueeze(0),

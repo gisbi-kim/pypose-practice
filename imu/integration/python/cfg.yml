@@ -11,11 +11,11 @@ output:
 gyr_std_const: 0.0032 # pypose's Default: 0.0032.
 acc_std_const: 0.02 # pypose's Default: 0.08.
 
-step_size: 1
+step_size: 6
 
 use_lidar_correction: True 
-downsampling_mode: "skip" # voxel or skip
-voxel_size: 0.3
+downsampling_mode: "voxel" # voxel or skip
+voxel_size: 0.5
 point_skip: 20
 icp_inlier_threshold: 0.5
 visualize_registered_scan: False
