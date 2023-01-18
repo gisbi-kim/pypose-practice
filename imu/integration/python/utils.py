@@ -1,12 +1,33 @@
+import os
 import numpy as np
 import torch
 from matplotlib.collections import PatchCollection
 from matplotlib.patches import Ellipse
 import copy
 import open3d as o3d
+import yaml
+from functools import wraps
+import time
+import matplotlib
+import matplotlib.pyplot as plt
+from matplotlib.collections import PatchCollection
+from matplotlib.patches import Ellipse
 
 
-class KITTIcalib:
+def timeit(func):
+    @wraps(func)
+    def timeit_wrapper(*args, **kwargs):
+        start_time = time.perf_counter()
+        result = func(*args, **kwargs)
+        end_time = time.perf_counter()
+        total_time = end_time - start_time
+        print(
+            f'Function {func.__name__} consumed {total_time:.4f} seconds')
+        return result
+    return timeit_wrapper
+
+
+class KittiCalib:
     def __init__(self):
         imu2velo_rot = np.array([9.999976e-01, 7.553071e-04, -2.035826e-03,
                                 -7.854027e-04, 9.998898e-01, -1.482298e-02,
@@ -22,6 +43,80 @@ class KITTIcalib:
 
         self.imu2velo = imu2velo
         self.velo2imu = velo2imu
+
+
+def load_cfg(fpath):
+    with open(fpath) as f:
+        cfg = yaml.load(f, Loader=yaml.FullLoader)
+
+    return cfg
+
+
+def downsample_points(vel, cfg):
+    if cfg["downsampling_mode"] == "skip":
+        return velo2skippedpcd(vel, cfg["point_skip"])
+    else:
+        return velo2downpcd(vel, cfg["voxel_size"])
+
+
+def getSE3(state):
+    prop_global_pose = np.identity(4)  # prop means propagated
+    prop_global_pose[:3, :3] \
+        = state['rot'][..., -1, :].matrix().numpy().squeeze()
+    prop_global_pose[:3, -1] \
+        = state["pos"][..., -1, :].numpy().squeeze()
+    return prop_global_pose
+
+
+def visualize(vis_material):
+    cfg = vis_material["cfg"]
+    poses_gt = vis_material["poses_gt"]
+    poses = vis_material["poses"]
+    covs = vis_material["cfg"]
+
+    plt.figure(figsize=(10, 10))
+    if is_true(cfg["output"]["plot3d"]):
+        print("3d vis mode")
+        ax = plt.axes(projection="3d")
+        ax.plot3D(poses[:, 0], poses[:, 1], poses[:, 2], "b")
+        ax.plot3D(poses_gt[:, 0], poses_gt[:, 1], poses_gt[:, 2], "r")
+    else:
+        print("2d vis mode")
+        ax = plt.axes()
+        ax.plot(poses[:, 0], poses[:, 1], "b")
+        ax.plot(poses_gt[:, 0], poses_gt[:, 1], "r")
+
+        # note: cov is a set of 9x9 matrix in the order of rotation, velocity, and position.
+        plot_gaussian(ax, poses[:, 0:2], covs[:, 6:8, 6:8],
+                      facecolor=[0.1, 0.3, 1.0], edgecolor=[0, 0, 0],
+                      transparency=0.1, sigma=3, upto=1000, skip=10)
+
+    ax.axis('equal')
+    ax.set_xlabel('x')
+    ax.set_ylabel('y')
+    ax.set_zlabel('z')
+
+    plt.title("PyPose IMU Integrator")
+    plt.legend(["IMU only odometry", "Ground Truth"])
+
+    if not os.path.exists(cfg["output"]["save_dir"]):
+        os.makedirs(cfg["output"]["save_dir"])
+
+    drive = cfg["input"]["datadrive"]
+    gyr_std = cfg["gyr_std_const"]
+    acc_std = cfg["acc_std_const"]
+    figure_save_path = os.path.join(
+        cfg["output"]["save_dir"], cfg["input"]["dataname"] +
+        f"_{drive}_gyrStd{gyr_std}_accStd{acc_std}.png"
+    )
+    plt.savefig(figure_save_path)
+    print(f"Saved to {figure_save_path}")
+
+    # NOTE:
+    # at a host-side terminal,
+    #  $ xhost +local:docker; is required to visualize the figure
+    matplotlib.use("TkAgg")
+    plt.show()
 
 
 def imu_collate(data):
@@ -59,6 +154,15 @@ def velo2downpcd(velodyne, voxel_size=0.5):
     pcd = o3d.geometry.PointCloud()
     pcd.points = o3d.utility.Vector3dVector(xyz)
     pcd = pcd.voxel_down_sample(voxel_size=voxel_size)
+    return pcd
+
+
+def velo2skippedpcd(velodyne, skip=20):
+    xyz = velodyne[:, :3]
+    xyz = xyz[0:xyz.shape[0]:skip, :]
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(xyz)
+    # pcd = pcd.voxel_down_sample(voxel_size=voxel_size)
     return pcd
 
 
